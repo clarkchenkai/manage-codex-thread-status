@@ -16,6 +16,6 @@ For every listed Thread:
 3. Repeatedly strip all consecutive leading `✅`, `🚨`, or `⏳` prefixes and their following whitespace from the title. Add exactly one chosen emoji and one space. Preserve the remaining title body exactly. A status change is not a topic change.
 4. Use the native title tool only when the resulting title differs from the current title.
 
-Continue when one Thread cannot be read or renamed. After updates, list Threads again and verify every attempted title by read-back. Do not edit files, send external messages, create Threads, change task content, or perform any side effect besides title updates.
+Continue when one Thread cannot be read or renamed. After updates, read every attempted Thread again and verify both its title and current native/turn status. If a Thread changed state during the audit, reclassify it from the new evidence, update its prefix once more if needed, and read it back again. Do not edit files, send external messages, create Threads, change task content, or perform any side effect besides title updates.
 
 If every attempted update reads back correctly, output only `NO_REPLY`. If title synchronization fails and Clark must act, report only the affected Thread title and the shortest actionable error; do not expose Thread content, local paths, IDs, prompts, or internal reasoning.
