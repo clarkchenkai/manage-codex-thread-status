@@ -12,11 +12,15 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
+from pathlib import Path
 
 
 STATUS = {"in-progress": "⏳", "needs-attention": "🚨", "done": "✅"}
-ACTIONS = (*STATUS, "status")
-PREFIX = re.compile(r"^[✅🚨⏳]\s+")
+ACTIONS = (*STATUS, "status", "installation-status")
+PREFIX = re.compile(r"^[✅🚨⏳](?:\s*[✅🚨⏳])*\s*")
+AUTOMATION_NAME = "Codex Thread 状态同步"
+AUTOMATION_MARKER = "manage-codex-thread-status/v1"
 
 
 class AppServerError(RuntimeError):
@@ -69,6 +73,51 @@ def write_kind(current: str, updated: str) -> str:
     return "refresh" if current == updated else "change"
 
 
+def canonical_automation_prompt(skill_dir: Path) -> str:
+    lines = (skill_dir / "references" / "automation-prompt.md").read_text().splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def installation_status(codex_home: Path, skill_dir: Path) -> dict:
+    skill_link = codex_home / "skills" / "manage-codex-thread-status"
+    expected_prompt = canonical_automation_prompt(skill_dir)
+    candidates = []
+    for config_path in (codex_home / "automations").glob("*/automation.toml"):
+        with config_path.open("rb") as handle:
+            config = tomllib.load(handle)
+        prompt = config.get("prompt", "")
+        if config.get("name") != AUTOMATION_NAME and AUTOMATION_MARKER not in prompt:
+            continue
+        candidates.append({
+            "id": config.get("id"),
+            "kind": config.get("kind"),
+            "status": config.get("status"),
+            "rrule": config.get("rrule"),
+            "prompt_matches": prompt.strip() == expected_prompt,
+        })
+    active_candidates = [
+        item for item in candidates
+        if item["kind"] == "heartbeat"
+        and item["status"] == "ACTIVE"
+        and item["rrule"] == "FREQ=MINUTELY;INTERVAL=20"
+    ]
+    valid = [
+        item for item in active_candidates
+        if item["prompt_matches"]
+    ]
+    installed_skill = skill_link.is_symlink() and skill_link.resolve() == skill_dir.resolve()
+    return {
+        "ok": installed_skill and len(active_candidates) == 1 and len(valid) == 1,
+        "skill_link_verified": installed_skill,
+        "active_20_minute_automation_count": len(active_candidates),
+        "matching_automations": candidates,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("status", choices=ACTIONS)
@@ -77,6 +126,12 @@ def main() -> int:
     args = parser.parse_args()
     if args.status == "status" and args.title_body is not None:
         parser.error("--title-body cannot be used with status")
+
+    if args.status == "installation-status":
+        codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        result = installation_status(codex_home, Path(__file__).parents[1])
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result["ok"] else 2
 
     codex = shutil.which("codex")
     if not args.thread_id or not codex:

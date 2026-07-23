@@ -1,85 +1,87 @@
 ---
 name: manage-codex-thread-status
-description: Keep Codex thread titles synchronized with live work using `⏳`, `🚨`, and `✅`, and rename the title body when the task topic materially changes. Use when enabling, auditing, or repairing thread status across workspaces, interactive tasks, and automations, including environments that lack the native thread-title tool but expose `CODEX_THREAD_ID`.
+description: Keep Codex thread titles synchronized with live work using `⏳`, `🚨`, and `✅`. Use when installing or running the 20-minute cross-thread status coordinator, auditing sidebar title drift, repairing stale prefixes, or updating one thread from an interactive task or tool-less automation.
 ---
 
 # Codex Thread Status Manager
 
-Keep the user-visible thread title aligned with both the current state and the current topic. Prefer the native Codex thread-title tool. Use the bundled fallback only when that tool is unavailable.
+Keep every visible title aligned with the Thread's current work. Use the scheduled coordinator as the cross-thread safety net and per-turn updates for immediate feedback.
 
 ## Status contract
 
-- `⏳`: Work is active, monitoring is running, a tool or remote result is pending, or completion is unclear.
-- `🚨`: Progress is blocked on input, approval, credentials, permission, or a decision only the user can provide.
-- `✅`: The current request is delivered with no pending work, unresolved blocker, wait step, or user decision.
+- `⏳`: Work is active, a monitor is running, a tool or remote result is pending, or completion is unclear.
+- `🚨`: Progress explicitly requires input, approval, credentials, permission, a choice, or another action only the user can provide.
+- `✅`: The current request is delivered, with no pending work, blocker, wait step, or user decision.
 
-Use exactly one status emoji and one space. Preserve the title body when only the status changes. Rename the body only when the task topic materially changes; do not rename it for routine implementation steps.
+Use exactly one status emoji and one space. Be conservative with `✅`. Do not use `🚨` merely because an error occurred while the Agent can still handle it.
+
+Strip all consecutive existing status prefixes before writing the new one. Preserve the title body when only status changes. Rename the body only when the task topic materially changes.
+
+## Install the 20-minute coordinator
+
+This is the primary product workflow. Create one Codex heartbeat automation that runs every 20 minutes in a stable coordinator Thread. Use the complete prompt in [references/automation-prompt.md](references/automation-prompt.md); do not summarize or partially copy it.
+
+After creation, read the Automation back and verify:
+
+1. It is active and scheduled every 20 minutes.
+2. Its prompt lists Threads, reads ambiguous terminal state, applies all three status classes, preserves title bodies, and performs read-back.
+3. It uses native `set_thread_title` updates so the desktop receives the title event.
+4. A real run corrects at least one stale active title and correctly preserves one waiting-user and one completed title.
+
+Run the deterministic deployment read-back after creating or updating the Automation:
+
+```bash
+python3 <skill-directory>/scripts/set_thread_status.py installation-status
+```
+
+It must report `ok: true`, exactly one active 20-minute Automation, a verified global Skill link, and an exact canonical-prompt match.
+
+The coordinator is a standing monitor, so its own title normally remains `⏳` while the Automation is active.
 
 ## Per-turn workflow
 
-1. At the start of a user turn, set the current thread to `⏳` before beginning ordinary investigation or implementation.
-2. Keep `⏳` while work remains active.
-3. Before asking for an action that only the user can take, set `🚨`.
-4. Before the final response, set `✅` only if the current request is fully complete.
-5. If the topic changed, update the title body at the same time as the next status change.
+Use this as the fast path between scheduled audits:
 
-This workflow is Agent-driven. A Skill is not a lifecycle hook and does not receive app spinner events. A thread created before these instructions were installed may continue working with a stale prefix because its existing context does not dynamically reload the new rule.
+1. At the start of a user turn, set the current Thread to `⏳`.
+2. Keep `⏳` while work, monitoring, tools, or remote results remain pending.
+3. Before yielding for an action only the user can take, set `🚨`.
+4. Before a final response, set `✅` only when the current request is fully delivered.
 
-## Execution paths
+The scheduled coordinator repairs missed or stale per-turn writes. Per-turn compliance alone is not the product.
 
-### Native tool
+## Native and fallback paths
 
-Use the Codex thread-title tool whenever it is available. It is the preferred path because the desktop UI receives the update directly.
+Prefer the native Codex thread-title tool. It reaches the desktop event path and can update any Thread selected by the coordinator.
 
-### Fallback for tool-less tasks
-
-If the native tool is unavailable and `CODEX_THREAD_ID` is present, resolve this Skill's directory and run:
+When the native tool is unavailable and `CODEX_THREAD_ID` exists, update only that known Thread with:
 
 ```bash
 python3 <skill-directory>/scripts/set_thread_status.py in-progress
-python3 <skill-directory>/scripts/set_thread_status.py status
+python3 <skill-directory>/scripts/set_thread_status.py needs-attention
 python3 <skill-directory>/scripts/set_thread_status.py done
+python3 <skill-directory>/scripts/set_thread_status.py status
 ```
 
-Use `needs-attention` for `🚨`. To update the topic body as well:
+Use `--thread-id <id>` for a known target and `--title-body "New topic"` only when the topic changed. The fallback re-sends same-title writes and reads the backend title back, but it cannot prove desktop rendering.
 
-```bash
-python3 <skill-directory>/scripts/set_thread_status.py in-progress --title-body "Implement status-aware thread titles"
-```
-
-The fallback uses Python's standard library and a short-lived `codex app-server` process. A status failure must not block the underlying task.
-
-Status-setting calls deliberately re-send `thread/name/set` even when the backend title already equals the requested value. This gives a targeted repair one chance to re-emit the title event when the desktop UI is stale. Backend readback still does not prove UI refresh.
-
-For a specific older thread that is visibly active but has a stale prefix, a current coordinator may repair only that thread:
-
-```bash
-python3 <skill-directory>/scripts/set_thread_status.py in-progress --thread-id <thread-id>
-```
-
-Resolve the target from the native task list or the visible UI. The fallback's short-lived app-server cannot prove the desktop process's live spinner state, so it must not scan or infer which threads are active.
-
-## Automation ordering
-
-If an automation requires an atomic first step such as capturing time, obtaining a lease, or running a probe, complete that step first and then immediately set `⏳`. Set `✅` before a successful `NO_REPLY` or final response. Set `🚨` only when the automation genuinely needs user action.
-
-Add the fallback calls explicitly to automation prompts that do not expose the native title tool. Do not assume a global instruction will override a more specific automation contract.
+Do not use the fallback to discover or semantically classify other Threads. Cross-thread classification belongs to the scheduled native-tool coordinator.
 
 ## Boundaries
 
-- Do not poll, create a daemon, or scan historical threads.
-- Do not edit Codex session indexes directly.
-- Do not treat an error as `🚨` while the agent can still handle it.
-- Existing threads may not reload later changes to global instructions or automation prompts. They require a targeted coordinator repair or a newly created thread; receiving another user message does not prove that the old context reloaded the rule.
-- A Skill stored in one workspace does not automatically govern every other workspace. Install it globally or reference its absolute directory from the automation that uses it.
+- Do not edit Codex session indexes or infer state from database files.
+- Do not create a separate polling daemon; use the Codex heartbeat Automation.
+- Do not expose thread contents, local paths, or internal reasoning in Automation output.
+- Do not let one unreadable Thread abort the rest of an audit.
+- Do not rewrite title bodies during a status-only audit.
+- Do not report backend read-back as proof of desktop rendering.
 
 ## Verification
 
-Prove each relevant layer separately:
+Prove each layer separately:
 
-1. Configuration: the Skill or automation prompt references the correct execution path.
-2. Static validation: Skill metadata and Python syntax pass.
-3. Runtime: an active test thread changes from `✅` to `⏳`, the write receives no RPC error, a second `thread/read` reads back `⏳`, and completion changes it to `✅`.
-4. UI: confirm the Codex sidebar visibly refreshes; a backend readback alone is not UI proof.
+1. Skill: metadata validation, Python syntax, unit tests, and Automation contract tests pass.
+2. Deployment: the global Skill link and 20-minute Automation both exist and read back correctly.
+3. Runtime: an active Thread becomes `⏳`, a user-blocked Thread becomes or remains `🚨`, and a fully delivered Thread becomes or remains `✅`.
+4. UI: the sidebar visibly shows the corrected prefixes after a native update.
 
-Report untested layers as `NOT RUN` and unobserved UI behavior as `NOT PROVEN`.
+Do not call the product complete if the scheduled Automation is absent or no real cross-thread run has passed.
