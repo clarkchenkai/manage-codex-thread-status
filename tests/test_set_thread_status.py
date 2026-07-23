@@ -31,6 +31,12 @@ class UpdatedTitleTests(unittest.TestCase):
             "✅ New topic",
         )
 
+    def test_same_title_is_classified_as_refresh_write(self) -> None:
+        self.assertEqual(MODULE.write_kind("⏳ Existing topic", "⏳ Existing topic"), "refresh")
+
+    def test_changed_title_is_classified_as_change_write(self) -> None:
+        self.assertEqual(MODULE.write_kind("✅ Existing topic", "⏳ Existing topic"), "change")
+
 
 class RequireResultTests(unittest.TestCase):
     def test_rejects_rpc_error(self) -> None:

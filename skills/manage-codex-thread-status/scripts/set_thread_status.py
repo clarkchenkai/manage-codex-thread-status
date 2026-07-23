@@ -64,6 +64,11 @@ def updated_title(current: str, action: str, title_body: str | None) -> str:
     return f"{STATUS[action]} {body}"
 
 
+def write_kind(current: str, updated: str) -> str:
+    """Describe whether the write changes content or re-emits it for refresh."""
+    return "refresh" if current == updated else "change"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("status", choices=ACTIONS)
@@ -106,9 +111,11 @@ def main() -> int:
             return 0
 
         updated = updated_title(current, args.status, args.title_body)
-        if updated != current:
-            send(process, {"id": 3, "method": "thread/name/set", "params": {"threadId": args.thread_id, "name": updated}})
-            require_result(receive(process, 3), "thread/name/set")
+        title_write_kind = write_kind(current, updated)
+        # Always write, including the same value. A targeted repair may need to
+        # re-emit the title event when the backend is correct but the UI is stale.
+        send(process, {"id": 3, "method": "thread/name/set", "params": {"threadId": args.thread_id, "name": updated}})
+        require_result(receive(process, 3), "thread/name/set")
 
         send(process, {"id": 4, "method": "thread/read", "params": {"threadId": args.thread_id, "includeTurns": False}})
         verified_thread = require_result(receive(process, 4), "thread/read verification").get("thread") or {}
@@ -121,6 +128,7 @@ def main() -> int:
             "ok": True,
             "thread_id": args.thread_id,
             "title": verified_title,
+            "write_kind": title_write_kind,
             "backend_verified": True,
             "ui_refresh": "NOT_PROVEN",
         }, ensure_ascii=False))
