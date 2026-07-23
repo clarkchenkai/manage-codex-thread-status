@@ -8,7 +8,9 @@ Keep Codex thread titles honest and visible:
 ✅ Implement thread status management
 ```
 
-This open-source Codex Skill synchronizes the status prefix with live work and renames the title body only when the task topic materially changes. It supports interactive threads, cross-workspace coordination, and automations that do not expose the native thread-title tool.
+This open-source Codex Skill gives Codex a per-turn contract for synchronizing the status prefix with live work. It renames the title body only when the task topic materially changes. It supports interactive threads, cross-workspace coordination, and automations that do not expose the native thread-title tool.
+
+Codex Skills are instructions, not lifecycle hooks. A thread created before this Skill or its global rule was installed does not dynamically reload them. The spinner reflects the app's runtime state; the emoji changes only when an Agent or coordinator explicitly writes the title.
 
 ## What it does
 
@@ -50,6 +52,17 @@ When the thread-title tool is available, update the current title at the start a
 
 Existing threads may not reload later changes to global instructions. Validate global changes in a new thread.
 
+### Repair an older active thread
+
+If an older thread is visibly working but still carries `✅`, use a current coordinator thread with the native title tool, or target the fallback explicitly:
+
+```bash
+python3 "$HOME/.codex/skills/manage-codex-thread-status/scripts/set_thread_status.py" \
+  in-progress --thread-id <thread-id>
+```
+
+This is a targeted repair, not automatic monitoring. Do not infer live desktop activity from the fallback's short-lived app-server: use the Codex task list or the visible spinner to identify the target first.
+
 ## Automation fallback
 
 ```bash
@@ -74,7 +87,7 @@ The app-server surface used by the fallback may evolve. Prefer the native Codex 
 - Python syntax and privacy scans.
 - Live cross-workspace runtime test: `✅ → ⏳ → status readback → ✅`.
 
-Desktop UI refresh should still be confirmed on the Codex version where the Skill is installed.
+The fallback now rejects app-server RPC errors, reads the title back after every write, and reports `ui_refresh: NOT_PROVEN`. Desktop UI refresh must still be confirmed on the Codex version where the Skill is installed.
 
 ## License
 

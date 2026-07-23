@@ -19,6 +19,10 @@ ACTIONS = (*STATUS, "status")
 PREFIX = re.compile(r"^[✅🚨⏳]\s+")
 
 
+class AppServerError(RuntimeError):
+    """Raised when app-server returns an error or an incomplete response."""
+
+
 def send(process: subprocess.Popen, message: dict) -> None:
     process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
     process.stdin.flush()
@@ -40,6 +44,24 @@ def receive(process: subprocess.Popen, request_id: int, timeout: float = 2.0) ->
         if message.get("id") == request_id:
             return message
     return None
+
+
+def require_result(response: dict | None, operation: str) -> dict:
+    if response is None:
+        raise AppServerError(f"{operation} timed out")
+    if response.get("error") is not None:
+        raise AppServerError(f"{operation} failed: {json.dumps(response['error'], ensure_ascii=False)}")
+    result = response.get("result")
+    if not isinstance(result, dict):
+        raise AppServerError(f"{operation} returned no result")
+    return result
+
+
+def updated_title(current: str, action: str, title_body: str | None) -> str:
+    body = title_body.strip() if title_body is not None else PREFIX.sub("", current).strip()
+    if not body:
+        raise AppServerError("title body is empty")
+    return f"{STATUS[action]} {body}"
 
 
 def main() -> int:
@@ -66,33 +88,46 @@ def main() -> int:
     )
     try:
         send(process, {"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "set-thread-status", "version": "1.0.0"}, "capabilities": {"experimentalApi": True}}})
-        if not receive(process, 1):
-            print(json.dumps({"ok": False, "error": "app-server initialize failed"}))
-            return 2
+        require_result(receive(process, 1), "app-server initialize")
         send(process, {"method": "initialized", "params": {}})
         send(process, {"id": 2, "method": "thread/read", "params": {"threadId": args.thread_id, "includeTurns": False}})
-        response = receive(process, 2)
-        thread = ((response or {}).get("result") or {}).get("thread") or {}
+        thread = require_result(receive(process, 2), "thread/read").get("thread") or {}
         current = thread.get("name")
         if not current:
-            print(json.dumps({"ok": False, "error": "thread has no title"}))
-            return 2
+            raise AppServerError("thread has no title")
         if args.status == "status":
-            print(json.dumps({"ok": True, "thread_id": args.thread_id, "title": current}, ensure_ascii=False))
+            print(json.dumps({
+                "ok": True,
+                "thread_id": args.thread_id,
+                "title": current,
+                "backend_verified": True,
+                "ui_refresh": "NOT_PROVEN",
+            }, ensure_ascii=False))
             return 0
 
-        body = args.title_body.strip() if args.title_body is not None else PREFIX.sub("", current).strip()
-        if not body:
-            print(json.dumps({"ok": False, "error": "title body is empty"}))
-            return 2
-        updated = f"{STATUS[args.status]} {body}"
+        updated = updated_title(current, args.status, args.title_body)
         if updated != current:
             send(process, {"id": 3, "method": "thread/name/set", "params": {"threadId": args.thread_id, "name": updated}})
-            if not receive(process, 3):
-                print(json.dumps({"ok": False, "error": "thread/name/set failed"}))
-                return 2
-        print(json.dumps({"ok": True, "thread_id": args.thread_id, "title": updated}, ensure_ascii=False))
+            require_result(receive(process, 3), "thread/name/set")
+
+        send(process, {"id": 4, "method": "thread/read", "params": {"threadId": args.thread_id, "includeTurns": False}})
+        verified_thread = require_result(receive(process, 4), "thread/read verification").get("thread") or {}
+        verified_title = verified_thread.get("name")
+        if verified_title != updated:
+            raise AppServerError(
+                f"title readback mismatch: expected {updated!r}, got {verified_title!r}"
+            )
+        print(json.dumps({
+            "ok": True,
+            "thread_id": args.thread_id,
+            "title": verified_title,
+            "backend_verified": True,
+            "ui_refresh": "NOT_PROVEN",
+        }, ensure_ascii=False))
         return 0
+    except AppServerError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 2
     finally:
         process.terminate()
         try:
