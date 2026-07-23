@@ -61,7 +61,7 @@ python3 "$HOME/.codex/skills/manage-codex-thread-status/scripts/set_thread_statu
   in-progress --thread-id <thread-id>
 ```
 
-This is a targeted repair, not automatic monitoring. Do not infer live desktop activity from the fallback's short-lived app-server: use the Codex task list or the visible spinner to identify the target first.
+This is a targeted repair, not automatic monitoring. The fallback deliberately re-sends the title even when the backend already holds the same value, giving the UI one new refresh event. Do not infer live desktop activity from the fallback's short-lived app-server: use the Codex task list or the visible spinner to identify the target first.
 
 ## Automation fallback
 

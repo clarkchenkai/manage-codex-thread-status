@@ -49,6 +49,8 @@ python3 <skill-directory>/scripts/set_thread_status.py in-progress --title-body 
 
 The fallback uses Python's standard library and a short-lived `codex app-server` process. A status failure must not block the underlying task.
 
+Status-setting calls deliberately re-send `thread/name/set` even when the backend title already equals the requested value. This gives a targeted repair one chance to re-emit the title event when the desktop UI is stale. Backend readback still does not prove UI refresh.
+
 For a specific older thread that is visibly active but has a stale prefix, a current coordinator may repair only that thread:
 
 ```bash
