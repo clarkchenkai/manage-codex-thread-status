@@ -84,7 +84,9 @@ class AutomationContractTests(unittest.TestCase):
     def test_prompt_preserves_topic_and_verifies_updates(self) -> None:
         self.assertIn("strip all consecutive", self.prompt)
         self.assertIn("Preserve the remaining title body exactly", self.prompt)
-        self.assertIn("verify every attempted title by read-back", self.prompt)
+        self.assertIn("verify both its title and current native/turn status", self.prompt)
+        self.assertIn("changed state during the audit", self.prompt)
+        self.assertIn("update its prefix once more", self.prompt)
 
     def test_skill_requires_real_scheduled_runtime(self) -> None:
         self.assertIn("every 20 minutes", self.skill)
