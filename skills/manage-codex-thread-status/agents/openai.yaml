@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Thread Status Manager"
+  short_description: "Keep Codex thread titles accurate across workspaces"
+  default_prompt: "Use $manage-codex-thread-status to keep this Codex thread title synchronized with its live status and current topic."
